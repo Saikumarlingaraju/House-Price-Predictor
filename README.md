@@ -85,7 +85,7 @@ Each model is evaluated using:
 
 1. **Clone the repository**:
    ```bash
-   git clone https://github.com/hk-kumawat/housepricepredictor.git
+   https://github.com/hk-kumawat/House-Price-Predictor.git
    ```
 
 2. **Install dependencies**:
