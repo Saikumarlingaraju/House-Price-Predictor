@@ -14,7 +14,7 @@ Explore the House Price Predictor! 👉🏻 [![Experience It! 🌟](https://img.
 
 _Below is a preview of the House Price Predictor in action. Input various housing factors to predict the price. Check out the user-friendly interface and data-driven predictions!_ 👇🏻
 <p align="center">
-  <img src="https://github.com/user-attachments/assets/cb2a1203-2da9-4c21-9ba4-a528b671730a" alt="house">
+  <img src="https://github.com/user-attachments/assets/bfff63d3-a2f3-4aa6-8da5-ad89bcab1c74" alt="house">
 </p>
 
 <br>
@@ -135,3 +135,11 @@ I’d love to hear from you! Feel free to reach out:
 - [![GitHub](https://img.shields.io/badge/GitHub-hk--kumawat-blue?logo=github)](https://github.com/hk-kumawat) 💻 — Explore my projects and contributions.
 - [![LinkedIn](https://img.shields.io/badge/LinkedIn-Harshal%20Kumawat-blue?logo=linkedin)](https://www.linkedin.com/in/harshal-kumawat/) 🌐 — Let’s connect professionally.
 - [![Email](https://img.shields.io/badge/Email-harshalkumawat100@gmail.com-blue?logo=gmail)](mailto:harshalkumawat100@gmail.com) 📧 — Send me an email for any in-depth discussions.
+
+<br>
+
+---
+
+## Thank you for exploring this project! 🏠
+
+> Home is the starting place of love, hope, and dreams. – Anonymous
