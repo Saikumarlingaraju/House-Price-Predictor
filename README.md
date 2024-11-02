@@ -142,4 +142,4 @@ I’d love to hear from you! Feel free to reach out:
 
 ## Thank you for exploring this project! 🏠
 
-> Home is the starting place of love, hope, and dreams. – Anonymous
+> "Home is the starting place of love, hope, and dreams." – Anonymous
