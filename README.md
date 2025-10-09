@@ -6,7 +6,7 @@
 
 ## Overview
 
-This project is a house price prediction system built using **Streamlit** and **scikit-learn**. It uses a linear regression model trained on the **USA Housing** dataset to estimate house prices based on factors such as area income, house age, number of rooms, number of bedrooms, and area population. The interactive web app allows users to input these parameters and receive real-time price predictions with an intuitive and clean interface.
+This project is a house price prediction system built using **Streamlit** and **scikit-learn**. The repository has been adapted to support Indian data (per-state or per-city models). Use `merged_files.csv` (or a filtered file like `merged_hyderabad.csv`) and the `train_india.py` script to train a per-state/city model. The interactive web app allows users to input property details and receive price predictions in INR.
 
 ## Live Demo
 
@@ -86,10 +86,10 @@ This journey has not only improved my technical skills but also deepened my unde
 ## Installation🛠
 
 1. **Clone the Repository:**
-   ```bash
-   git clone https://github.com/hk-kumawat/House-Price-Predictor.git
-   cd hk-kumawat-house-price-predictor
-   ```
+  ```powershell
+  git clone https://github.com/hk-kumawat/House-Price-Predictor.git
+  cd House-Price-Predictor
+  ```
 
 2. **Create & Activate a Virtual Environment (optional but recommended):**
    ```bash
@@ -98,14 +98,14 @@ This journey has not only improved my technical skills but also deepened my unde
    ```
 
 3. **Install Required Packages:**
-   ```bash
-   pip install -r requirements.txt
-   ```
+  ```powershell
+  .\.venv\Scripts\python.exe -m pip install -r .\requirements.txt
+  ```
 
 4. **Run the Application:**
-   ```bash
-   streamlit run app.py
-   ```
+  ```powershell
+  .\.venv\Scripts\python.exe -m streamlit run .\app.py
+  ```
 
 5. **(Optional) Use Dev Container:**
    - Open the project in an IDE that supports Dev Containers using `.devcontainer/devcontainer.json`.
@@ -115,11 +115,24 @@ This journey has not only improved my technical skills but also deepened my unde
 
 ## Usage🚀
 
-### Running the Streamlit App
+### Training & Running (India / Hyderabad example)
 
-Launch the prediction system with:
-```bash
-streamlit run app.py
+Train a Hyderabad model from the filtered CSV you created earlier:
+
+```powershell
+.\.venv\Scripts\python.exe .\train_india.py --csv merged_hyderabad.csv --state Hyderabad --n-estimators 100
+```
+
+Start the Streamlit app and choose `model_Hyderabad.pkl` in the dropdown:
+
+```powershell
+.\.venv\Scripts\python.exe -m streamlit run .\app.py
+```
+
+Quickly validate a saved model from the terminal:
+
+```powershell
+.\.venv\Scripts\python.exe .\test_model.py .\model_Hyderabad.pkl
 ```
 
 **Features include:**
@@ -132,6 +145,23 @@ Explore the data analysis and model training:
 ```bash
 jupyter notebook "House_Price_Prediction.ipynb"
 ```
+
+
+### Map features (optional)
+
+If you install the optional mapping dependencies (folium, streamlit-folium, geopy) the web UI shows an interactive map where you can:
+
+- Click to drop a pin and auto-suggest the nearest locality from the training data.
+- Reverse-geocode the clicked coordinates to a readable address.
+- Toggle between Street and Esri Satellite basemaps.
+
+Install optional packages with:
+
+```powershell
+.\.venv\Scripts\python.exe -m pip install folium streamlit-folium geopy
+```
+
+Note: Nominatim (used for reverse-geocoding) has rate limits; the app caches results to avoid excessive requests.
 
 <br>
 
