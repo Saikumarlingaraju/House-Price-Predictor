@@ -1,0 +1,60 @@
+{
+  "app_config": {
+    "title": "House Price Predictor",
+    "version": "2.0.0",
+    "theme": "light",
+    "default_port": 8501
+  },
+  "model_config": {
+    "default_state": "Hyderabad",
+    "n_estimators": 100,
+    "test_size": 0.2,
+    "random_state": 42
+  },
+  "ui_config": {
+    "show_map": true,
+    "show_analytics": true,
+    "show_history": true,
+    "max_history_items": 100,
+    "default_area": 1000,
+    "default_bedrooms": 2
+  },
+  "prediction_config": {
+    "price_per_sqft_highlight": true,
+    "show_similar_properties": true,
+    "similar_properties_count": 5,
+    "similarity_threshold": 0.2
+  },
+  "export_config": {
+    "csv_export": true,
+    "json_export": true,
+    "excel_export": false
+  },
+  "geocoding_config": {
+    "enabled": true,
+    "max_locations": 200,
+    "cache_results": true,
+    "timeout": 10,
+    "user_agent": "house-price-predictor-v2"
+  },
+  "visualization_config": {
+    "chart_height": 300,
+    "color_scheme": ["#667eea", "#764ba2"],
+    "show_correlation": true,
+    "show_distribution": true
+  },
+  "features": {
+    "required": ["Price", "Area", "No. of Bedrooms", "City"],
+    "optional": ["Location", "Latitude", "Longitude"],
+    "categorical": ["City", "Location"],
+    "numeric": ["Area", "No. of Bedrooms", "Price"]
+  },
+  "validation": {
+    "min_area": 100,
+    "max_area": 50000,
+    "min_bedrooms": 0,
+    "max_bedrooms": 10,
+    "min_price": 100000,
+    "max_price": 1000000000
+  }
+}

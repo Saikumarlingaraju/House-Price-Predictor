@@ -8,6 +8,8 @@ This script:
 - detects binary amenity columns (0/1) automatically
 - trains a RandomForest pipeline and saves model_<state>.pkl and df_<state>.pkl
 """
+# Near the top of your file, with other imports
+from sklearn.ensemble import RandomForestRegressor
 
 import argparse
 import pickle
