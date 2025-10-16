@@ -63,6 +63,11 @@ Thumbs.db
 tmp_*.html
 *.tmp
 
+# Backup files
+*.bak
+.bak
+
+
 # Environment variables
 .env
 .env.local
