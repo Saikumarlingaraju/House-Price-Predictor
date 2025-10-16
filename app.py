@@ -160,6 +160,7 @@ df = None
 meta = None
 data_source = 'Unknown'
 amen_cols = []
+centroids = {}
 
 # Discover available models
 models = sorted([p.name for p in ROOT.glob('model_*.pkl')])
@@ -219,46 +220,114 @@ def is_streamlit_runtime():
         pass
     return False
 
-def load_model_and_data(model_name):
-    """Load model, dataframe, and metadata"""
+
+@st.cache_resource(show_spinner=False)
+def _load_model_resource(model_path: Path):
+    """Cached model loader."""
+    with open(model_path, 'rb') as f:
+        return pickle.load(f)
+
+
+@st.cache_data(show_spinner=False)
+def _load_pickle_data(path: Path):
+    """Cached pickle loader for dataframes/aux files."""
+    with open(path, 'rb') as f:
+        return pickle.load(f)
+
+
+@st.cache_data(show_spinner=False)
+def detect_amenities_cached(df_local: pd.DataFrame) -> list:
+    """Cached amenity detection."""
+    amen = []
+    if df_local is None:
+        return amen
+    for c in df_local.columns:
+        if c in ['Price', 'Area', 'No. of Bedrooms', 'City', 'Location', 'Latitude', 'Longitude']:
+            continue
+        try:
+            if pd.api.types.is_numeric_dtype(df_local[c]):
+                vals = set(df_local[c].dropna().unique())
+                if vals.issubset({0, 1}):
+                    amen.append(c)
+        except Exception:
+            continue
+    return amen
+
+
+@st.cache_data(show_spinner=False)
+def geocode_address_cached(query: str):
+    """Geocode address using Nominatim (cached). Returns (lat, lon) or None."""
+    if not GEOCODE_AVAILABLE or not query:
+        return None
+    try:
+        geolocator = Nominatim(user_agent="house_price_predictor_app")
+        geocode = RateLimiter(geolocator.geocode, min_delay_seconds=1)
+        loc = geocode(query, timeout=10)
+        if loc:
+            return (float(loc.latitude), float(loc.longitude))
+    except Exception:
+        return None
+    return None
+
+
+def load_centroids(path: Path = None):
+    """Load centroids JSON if present."""
+    global centroids
+    p = Path(path) if path else ROOT / 'data' / 'centroids.json'
+    try:
+        if p.exists():
+            with open(p, 'r', encoding='utf8') as f:
+                centroids = json.load(f)
+    except Exception:
+        centroids = {}
+
+
+# Load centroids at startup
+load_centroids()
+
+
+def _esc(s: str) -> str:
+    """Escape single quotes for HTML title attributes."""
+    if s is None:
+        return ''
+    return str(s).replace("'", "&#39;")
+
+
+def show_label(label: str, tip: str):
+    """Render a label with an inline help icon that shows a native tooltip on hover."""
+    safe = _esc(tip)
+    html = f"<div style='font-weight:600; margin-bottom:4px'>{label} <span title='{safe}' style='cursor:help;color:#667eea;font-weight:700;margin-left:6px'>ⓘ</span></div>"
+    st.markdown(html, unsafe_allow_html=True)
+
+def load_model_and_data(model_name: str) -> bool:
+    """Load model, dataframe, and metadata using cached helpers."""
     global model, df, meta, data_source, amen_cols
-    
+
     selected_model = ROOT / model_name
     if not selected_model.exists():
+        st.warning(f"Model file not found: {model_name}")
         return False
-    
+
     try:
-        # Load model
-        with open(selected_model, 'rb') as f:
-            model = pickle.load(f)
-        
-        # Load dataframe
-        df_candidate = ROOT / f"df_{model_name.replace('model_', '').replace('.pkl','')}.pkl"
-        if df_candidate.exists():
-            with open(df_candidate, 'rb') as f:
-                df = pickle.load(f)
-            data_source = df_candidate.name
-        
-        # Load metadata
-        meta_candidate = ROOT / f"{selected_model.stem}_meta.json"
-        if meta_candidate.exists():
-            with open(meta_candidate, 'r', encoding='utf8') as f:
-                meta = json.load(f)
-        
-        # Detect amenity columns
-        amen_cols = []
-        if df is not None:
-            for c in df.columns:
-                if c in ['Price', 'Area', 'No. of Bedrooms', 'City', 'Location', 'Latitude', 'Longitude']:
-                    continue
+        with st.spinner('Loading model and data...'):
+            model = _load_model_resource(selected_model)
+
+            df_candidate = ROOT / f"df_{model_name.replace('model_', '').replace('.pkl','')}.pkl"
+            if df_candidate.exists():
+                df_local = _load_pickle_data(df_candidate)
+                df = df_local
+                data_source = df_candidate.name
+
+            meta_candidate = ROOT / f"{selected_model.stem}_meta.json"
+            if meta_candidate.exists():
                 try:
-                    if pd.api.types.is_numeric_dtype(df[c]):
-                        vals = set(df[c].dropna().unique())
-                        if vals.issubset({0, 1}):
-                            amen_cols.append(c)
+                    with open(meta_candidate, 'r', encoding='utf8') as f:
+                        meta = json.load(f)
                 except Exception:
-                    continue
-        
+                    meta = None
+
+            amen_cols = detect_amenities_cached(df)
+
         return True
     except Exception as e:
         st.error(f"Error loading model: {e}")
@@ -375,6 +444,54 @@ st.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
+# Onboarding / Quick Tour state
+if 'seen_intro' not in st.session_state:
+    st.session_state['seen_intro'] = False
+if 'show_tour' not in st.session_state:
+    st.session_state['show_tour'] = False
+
+# Sidebar quick tour button for easy access
+with st.sidebar:
+    if st.button('🎓 Quick Tour'):
+        st.session_state['show_tour'] = True
+
+# Show a prominent onboarding banner for first-time users
+if not st.session_state['seen_intro']:
+    st.markdown("""
+    <div class='info-box'>
+        <h3>Welcome 👋</h3>
+        <p>This app predicts house prices across Indian cities. Not sure where to start? Use the Quick Tour to learn what each section does and how to get accurate predictions.</p>
+    </div>
+    """, unsafe_allow_html=True)
+    col_a, col_b = st.columns([1,1])
+    with col_a:
+        if st.button('🚀 Take Quick Tour'):
+            st.session_state['show_tour'] = True
+            st.session_state['seen_intro'] = True
+    with col_b:
+        if st.button('✖ Dismiss'):
+            st.session_state['seen_intro'] = True
+
+# Quick Tour expander (shown when triggered)
+if st.session_state.get('show_tour'):
+    with st.expander('🎓 Quick Tour — How to use this app', expanded=True):
+        st.markdown(
+            """
+        1. Select a trained model from the **sidebar** (models are per-city/state).
+        2. Fill in property details: Area, Bedrooms, City and (optional) Location.
+        3. Toggle amenities to reflect features (Gym, Pool, Parking, etc.).
+        4. Click **Predict Price** to get an instant valuation — the result shows price, price/sqft and how it compares to the dataset.
+        5. Use the **Analytics** tab to explore market distributions and city-level stats.
+        6. Use the **Compare** tool to compare past predictions from your history.
+        7. If geocoding is enabled, a map will be shown. If offline, the app falls back to precomputed city centroids.
+
+        Tip: Use the 'Download History' button in the sidebar to export predictions as CSV.
+        """,
+            unsafe_allow_html=False,
+        )
+        if st.button('Close Tour'):
+            st.session_state['show_tour'] = False
+
 # Create tabs for better organization
 tab1, tab2, tab3, tab4 = st.tabs(["🏠 Predict Price", "📊 Analytics Dashboard", "📈 Price Comparison", "ℹ️ Help & Guide"])
 
@@ -385,126 +502,146 @@ with tab1:
     if model is None:
         st.error("⚠️ No model loaded. Please select a model from the sidebar.")
     else:
+        # Optional geocoding toggle (sidebar)
+        geocode_enabled = st.sidebar.checkbox('Enable geocoding (show map)', value=False, help='Try to geocode City + Location (requires network and geopy)')
+
         col_left, col_right = st.columns([2, 1])
-        
+
+        # defaults to ensure variables exist for the summary panel
+        default_area = int(get_median('Area', 1000))
+        default_bedrooms = int(get_median('No. of Bedrooms', 2))
+        default_city = df['City'].mode()[0] if (df is not None and 'City' in df.columns and not df['City'].mode().empty) else 'Hyderabad'
+
         with col_left:
             st.markdown("### 📝 Property Details")
             st.markdown("Fill in the property information below to get an instant price prediction.")
-            
-            # Basic inputs
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                area = st.number_input(
-                    '🏢 Area (sqft)',
-                    value=int(get_median('Area', 1000)),
-                    min_value=100,
-                    max_value=50000,
-                    step=50,
-                    help="Enter the total built-up area in square feet"
-                )
-            
-            with col2:
-                bedrooms = st.number_input(
-                    '🛏️ Bedrooms',
-                    value=int(get_median('No. of Bedrooms', 2)),
-                    min_value=0,
-                    max_value=10,
-                    step=1,
-                    help="Number of bedrooms in the property"
-                )
-            
-            # Area slider for quick adjustment
-            if meta and 'feature_ranges' in meta and 'Area' in meta['feature_ranges']:
-                ranges = meta['feature_ranges']['Area']
-                area = st.slider(
-                    '🎚️ Fine-tune Area',
-                    min_value=int(ranges['min']),
-                    max_value=int(ranges['max']),
-                    value=int(area),
-                    step=50
-                )
-            
-            # Location/City selection
-            st.markdown("### 📍 Location")
-            
-            if df is not None and 'Location' in df.columns:
-                locations = sorted(df['Location'].dropna().unique().tolist())
-                location = st.selectbox(
-                    'Area/Locality',
-                    options=[''] + locations,
-                    help="Select the specific locality or area"
-                )
-            else:
-                location = st.text_input('Location (optional)', '')
-            
-            if df is not None and 'City' in df.columns:
-                cities = sorted(df['City'].dropna().unique().tolist())
-                city = st.selectbox(
-                    'City',
-                    options=cities,
-                    index=0 if cities else None,
-                    help="Select the city"
-                )
-            else:
-                city = st.text_input('City', value='Hyderabad')
-            
-            # Property features
-            st.markdown("### 🏠 Property Features")
-            
-            col1, col2, col3 = st.columns(3)
-            
-            with col1:
-                resale = st.selectbox('🔄 Property Type', options=['New', 'Resale'], index=0)
-            
-            with col2:
-                maintenance = st.selectbox('👷 Maintenance Staff', options=['Unknown', 'No', 'Yes'], index=0)
-            
-            with col3:
-                parking = st.selectbox('🚗 Car Parking', options=['Unknown', 'No', 'Yes'], index=0)
-            
-            # Common amenities (prominent display)
-            st.markdown("### ⭐ Key Amenities")
-            
-            amenity_dict = {}
-            
-            # Create grid for common amenities
-            cols = st.columns(4)
-            common_amenities = ['Gym', 'SwimmingPool', 'Club', 'Park', 'AC', 'Wifi', 'Intercom', 'GasConnection']
-            
-            for idx, amenity in enumerate(common_amenities):
-                if amenity in amen_cols:
-                    with cols[idx % 4]:
-                        amenity_dict[amenity] = st.checkbox(
-                            amenity.replace('SwimmingPool', 'Pool').replace('GasConnection', 'Gas'),
-                            value=bool(df[amenity].median() >= 0.5) if amenity in df.columns else False
-                        )
-            
-            # Advanced amenities in expander
-            if amen_cols:
-                other_amenities = [a for a in amen_cols if a not in common_amenities]
-                if other_amenities:
-                    with st.expander(f"🔧 Additional Amenities ({len(other_amenities)})"):
-                        cols = st.columns(3)
-                        for idx, amenity in enumerate(other_amenities):
-                            with cols[idx % 3]:
-                                amenity_dict[amenity] = st.checkbox(
-                                    amenity,
-                                    value=bool(df[amenity].median() >= 0.5) if amenity in df.columns else False,
-                                    key=f"adv_{amenity}"
-                                )
-            
-            # Prediction buttons
-            st.markdown("---")
-            col1, col2, col3 = st.columns([2, 1, 1])
-            
-            with col1:
-                predict_btn = st.button('🔮 Predict Price', use_container_width=True, type="primary")
-            
-            with col2:
+
+            with st.form('predict_form'):
+                # Basic inputs
+                col1, col2 = st.columns(2)
+
+                with col1:
+                    show_label('🏢 Area (sqft)', 'Total built-up area in square feet. Use the slider to fine-tune.')
+                    area = st.number_input(
+                        'Area (sqft)',
+                        value=default_area,
+                        min_value=100,
+                        max_value=50000,
+                        step=50,
+                        help="Enter the total built-up area in square feet",
+                        key='area_input'
+                    )
+
+                with col2:
+                    show_label('🛏️ Bedrooms', 'Number of bedrooms / BHK units. Use 0 for studio/office spaces.')
+                    bedrooms = st.number_input(
+                        'Bedrooms',
+                        value=default_bedrooms,
+                        min_value=0,
+                        max_value=10,
+                        step=1,
+                        help="Number of bedrooms in the property",
+                        key='bedrooms_input'
+                    )
+
+                # Area slider for quick adjustment
+                if meta and 'feature_ranges' in meta and 'Area' in meta['feature_ranges']:
+                    ranges = meta['feature_ranges']['Area']
+                    area = st.slider(
+                        '🎚️ Fine-tune Area',
+                        min_value=int(ranges['min']),
+                        max_value=int(ranges['max']),
+                        value=int(area),
+                        step=50
+                    )
+
+                # Location/City selection
+                show_label('📍 Location', 'Optional locality/area name. If left blank, nearest city centroid may be used for mapping.')
+
+                if df is not None and 'Location' in df.columns:
+                    locations = sorted(df['Location'].dropna().unique().tolist())
+                    location = st.selectbox(
+                        'Location (optional)',
+                        options=[''] + locations,
+                        help="Select the specific locality or area",
+                        key='location_select'
+                    )
+                else:
+                    location = st.text_input('Location (optional)', '')
+
+                if df is not None and 'City' in df.columns:
+                    cities = sorted(df['City'].dropna().unique().tolist())
+                    show_label('City', 'City where the property is located. Choose from trained model cities when available.')
+                    city = st.selectbox(
+                        'City',
+                        options=cities,
+                        index=0 if cities else 0,
+                        help="Select the city",
+                        key='city_select'
+                    )
+                else:
+                    show_label('City', 'City where the property is located. Choose from trained model cities when available.')
+                    city = st.text_input('City', value=default_city, key='city_text')
+
+                # Property features
+                show_label('🏠 Property Features', 'Basic property attributes used by the model (Resale/New, Maintenance staff, Car parking).')
+
+                col1, col2, col3 = st.columns(3)
+
+                with col1:
+                    show_label('🔄 Property Type', 'Is the flat/new construction or a resale? Some markets price resale differently.')
+                    resale = st.selectbox('Property Type', options=['New', 'Resale'], index=0, key='resale_select')
+
+                with col2:
+                    show_label('👷 Maintenance Staff', 'Presence of on-site maintenance/security staff. Unknown will be treated neutrally.')
+                    maintenance = st.selectbox('Maintenance', options=['Unknown', 'No', 'Yes'], index=0, key='maintenance_select')
+
+                with col3:
+                    show_label('🚗 Car Parking', 'Availability of car parking. Affects price per sqft in many cities.')
+                    parking = st.selectbox('Parking', options=['Unknown', 'No', 'Yes'], index=0, key='parking_select')
+
+                # Common amenities (prominent display)
+                show_label('⭐ Key Amenities', 'Toggle amenities (Gym, Pool, Wifi, etc.) that apply to this property.')
+
+                amenity_dict = {}
+
+                # Create grid for common amenities
+                cols = st.columns(4)
+                common_amenities = ['Gym', 'SwimmingPool', 'Club', 'Park', 'AC', 'Wifi', 'Intercom', 'GasConnection']
+
+                for idx, amenity in enumerate(common_amenities):
+                    if amenity in amen_cols:
+                        with cols[idx % 4]:
+                                    amenity_dict[amenity] = st.checkbox(
+                                        amenity.replace('SwimmingPool', 'Pool').replace('GasConnection', 'Gas'),
+                                        value=bool(df[amenity].median() >= 0.5) if amenity in df.columns else False,
+                                        key=f"amenity_{amenity}"
+                                    )
+
+                # Advanced amenities in expander
+                if amen_cols:
+                    other_amenities = [a for a in amen_cols if a not in common_amenities]
+                    if other_amenities:
+                        with st.expander(f"🔧 Additional Amenities ({len(other_amenities)})"):
+                            cols = st.columns(3)
+                            for idx, amenity in enumerate(other_amenities):
+                                with cols[idx % 3]:
+                                    amenity_dict[amenity] = st.checkbox(
+                                        amenity,
+                                        value=bool(df[amenity].median() >= 0.5) if amenity in df.columns else False,
+                                        key=f"adv_{amenity}"
+                                    )
+
+                # Prediction submit
+                st.markdown('---')
+                submitted = st.form_submit_button('🔮 Predict Price')
+
+        # action buttons outside the form
+        with col_left:
+            col_a, col_b = st.columns([1,1])
+            with col_a:
                 compare_btn = st.button('📊 Compare', use_container_width=True)
-            
-            with col3:
+            with col_b:
                 save_btn = st.button('💾 Save', use_container_width=True)
         
         with col_right:
@@ -543,8 +680,8 @@ with tab1:
                 )
                 st.plotly_chart(fig, use_container_width=True)
         
-        # Handle prediction
-        if predict_btn:
+        # Handle prediction (form submit)
+        if 'submitted' in locals() and submitted:
             with st.spinner('🔮 Calculating property value...'):
                 # Prepare input data
                 input_data = {
@@ -553,8 +690,32 @@ with tab1:
                     'City': city
                 }
                 
+                # Basic validation
+                errors = []
+                if area <= 0:
+                    errors.append('Area must be > 0')
+                if bedrooms < 0:
+                    errors.append('Bedrooms cannot be negative')
+
+                if errors:
+                    for e in errors:
+                        st.error(e)
+                    st.stop()
+
                 if location:
                     input_data['Location'] = location
+
+                # Geocode if enabled
+                latlon = None
+                if geocode_enabled and GEOCODE_AVAILABLE:
+                    query = f"{location}, {city}" if location else city
+                    try:
+                        latlon = geocode_address_cached(query)
+                    except Exception:
+                        latlon = None
+                if latlon:
+                    input_data['Latitude'] = latlon[0]
+                    input_data['Longitude'] = latlon[1]
                 
                 # Map categorical features
                 input_data['Resale'] = 1 if resale == 'Resale' else 0
@@ -610,6 +771,15 @@ with tab1:
                         'price_per_sqft': float(price_per_sqft)
                     }
                     st.session_state['pred_history'].insert(0, hist_entry)
+                    # Show map if geocoded
+                    if latlon and GEOCODE_AVAILABLE:
+                        try:
+                            m = folium.Map(location=[latlon[0], latlon[1]], zoom_start=15)
+                            folium.Marker([latlon[0], latlon[1]], tooltip=f"Predicted: {format_inr(prediction)}").add_to(m)
+                            st.markdown('### 🗺️ Location')
+                            st_folium(m, width=700, height=350)
+                        except Exception:
+                            st.info('Map could not be displayed (folium/streamlit-folium may be missing)')
                     
                     # Show similar properties
                     if df is not None and len(df) > 0:
